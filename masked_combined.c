@@ -88,6 +88,11 @@ void UnMaskArray(uint8_t y[], uint8_t x[][NUM_SHARES], uint8_t length) {
     }
 }
 
+
+/*
+ * Combined Sbox function
+ * Computes the sbox for all 16 bytes of the state in 'parallel'
+ */
 void CombinedSbox(uint8_t s[16][NUM_SHARES]) {
     uint8_t i,j;
     uint8_t a[16][NUM_SHARES];
@@ -98,8 +103,11 @@ void CombinedSbox(uint8_t s[16][NUM_SHARES]) {
     SecEvalCombined(w, a, fifth);
 
     SecMultCombined(a, s, w, snd);
+
     for(i = 0; i < 16; i++) {
         for(j = 0; j < NUM_SHARES; j++) {
+            // We have merged the affine lookup table with the last linear
+            // squaring in the extended addition chain.
             s[i][j] = l_affine_snd[a[i][j]];
         }
         if((NUM_SHARES & 1) == 0) {
@@ -107,6 +115,7 @@ void CombinedSbox(uint8_t s[16][NUM_SHARES]) {
         }
     }
 }
+
 
 
 void DualSbox(uint8_t y1[], uint8_t y2[], uint8_t x1[], uint8_t x2[]) {
@@ -137,8 +146,6 @@ void ShiftRowsMixColumns(uint8_t s[][NUM_SHARES], uint8_t round) {
     uint8_t Tmp,Tm,t;
     uint8_t r;
     for(share = 0; share < NUM_SHARES; share++) {
-        // Could modify this so that these can be run in a random order
-        
         // Rotate first row 1 columns to left
         temp         = s[1][share];
         s[1][share]  = s[5][share];
@@ -168,7 +175,6 @@ void ShiftRowsMixColumns(uint8_t s[][NUM_SHARES], uint8_t round) {
                 t   = s[r][share];
                 Tmp = s[r][share] ^ s[r+1][share] ^ s[r+2][share] ^ s[r+3][share] ;
                 
-                // These three blocks could be randomised? Put them in a function/.
                 Tm  = s[r][share] ^ s[r+1][share];
                 Tm = xtime(Tm);
                 s[r+0][share] ^= Tm ^ Tmp;
@@ -189,16 +195,23 @@ void ShiftRowsMixColumns(uint8_t s[][NUM_SHARES], uint8_t round) {
     }
 }
 
-
+/*
+ * SecEval Function
+ * Based on the CPRR SecEval function, this first runs the input 
+ * through the Common Shares function and then uses the first 
+ * technique by Zhang et al. for Random Reduction by 50%
+ */
 void SecEvalCombined(uint8_t w[16][NUM_SHARES], uint8_t z[16][NUM_SHARES], const uint8_t h[]) {
     uint8_t i,j,k,r,s0,t0,t1;
 
     for(i = 0; i < (NUM_SHARES/2); i++) {
         r = getRand();
         for(j = 0; j < 16; j++) {
+            // Common Shares
             z[j][(NUM_SHARES/2) + i] = (z[j][(NUM_SHARES/2) + i] ^ r) ^ z[j][i];
             z[j][i] = r;
-
+    
+            // The first section of the O(n) space complexity CPRR SecEval
             w[j][(NUM_SHARES/2) + i] = h[z[j][(NUM_SHARES/2) + i]];        
             w[j][i] = h[r];
         }
@@ -213,6 +226,7 @@ void SecEvalCombined(uint8_t w[16][NUM_SHARES], uint8_t z[16][NUM_SHARES], const
             w[0][i] ^= t0;
             w[0][j] ^= t1;
  
+            // Checks if the function can re-use the values already calculated
             if((i < (NUM_SHARES/2)) && (j < (NUM_SHARES/2))) {
                 for(k = 1; k < 16; k++) {
                     w[k][i] ^= t0;
@@ -229,13 +243,18 @@ void SecEvalCombined(uint8_t w[16][NUM_SHARES], uint8_t z[16][NUM_SHARES], const
     }
 }
 
+/*
+ *  SecMult for 16 bytes
+ */
 void SecMultCombined(uint8_t c[][NUM_SHARES], uint8_t a[][NUM_SHARES], uint8_t b[][NUM_SHARES], const uint8_t f[]) {
     uint8_t tmp0, k, i, j;
+    // First zero out the output array
     for(i = 0; i < NUM_SHARES; i++) {
         for(k = 0; k < 16; k++) {
             c[k][i] = 0;
         }
     }
+    // Multiply the masked a and b for each of the 16 bytes
     for(i = 0; i < NUM_SHARES; i++) {
         for(k = 0; k < 16; k++) {
             c[k][i] ^= gfMul(f[a[k][i]],b[k][i]);
